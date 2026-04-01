@@ -1,0 +1,74 @@
+name: Générer Image et Déployer
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# ⚠️ C'est ce qui manquait : autoriser l'écriture pour GitHub Pages
+permissions:
+  contents: write
+
+jobs:
+
+  # ─── Job 1 : Générer l'image et la stocker en artefact ───────────────
+  generation-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cloner le dépôt
+        uses: actions/checkout@v4
+
+      - name: Récupérer le message du commit
+        run: |
+          # head -1 évite les problèmes si le message est multi-lignes
+          MSG=$(git log -1 --pretty=%B | head -1)
+          echo "MESSAGE=$MSG" >> $GITHUB_ENV
+
+      - name: Appel API DynaPictures
+        run: |
+          curl -s -X POST "https://api.dynapictures.com/designs/87ce71f347" \
+            -H "Authorization: Bearer ${{ secrets.DYNAPICTURES_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"params\": [{\"name\": \"text1\", \"text\": \"$MESSAGE\"}]}" \
+            -o response.json
+          cat response.json  # Utile pour déboguer en cas d'erreur
+
+      - name: Télécharger l'image générée
+        run: |
+          URL=$(jq -r '.imageUrl' response.json)
+          mkdir -p images
+          curl -s -o "images/image-$(date +%s).png" "$URL"
+
+      - name: Sauvegarder l'image en artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: images-generees
+          path: images/
+
+  # ─── Job 2 : Récupérer l'artefact, générer le HTML, déployer ─────────
+  deploy:
+    runs-on: ubuntu-latest
+    needs: generation-image  # Attend que le job 1 soit terminé
+    steps:
+      - name: Télécharger l'artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: images-generees
+          path: images/  # Les .png arrivent directement ici
+
+      - name: Générer index.html
+        run: |
+          echo "<html><body><h1>Images générées</h1>" > index.html
+          for img in images/*.png; do
+            filename=$(basename "$img")
+            # Le chemin est relatif au dossier publié, pas au workspace
+            echo "<div><img src='images/$filename' width='300'><p>$filename</p></div>" >> index.html
+          done
+          echo "</body></html>" >> index.html
+
+      - name: Déployer sur GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .  # Publie index.html + le dossier images/
