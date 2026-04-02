@@ -15,12 +15,11 @@ jobs:
 
       - name: Récupérer le message du commit
         run: |
-          MSG=$(git log -1 --pretty=%B | head -n 1)
+          MSG=$(git log -1 --pretty=%B | head -1)
           echo "MESSAGE=$MSG" >> $GITHUB_ENV
 
       - name: Appel API DynaPictures
         run: |
-          mkdir -p images
           curl -s -X POST "https://api.dynapictures.com/designs/87ce71f347" \
             -H "Authorization: Bearer ${{ secrets.DYNAPICTURES_API_KEY }}" \
             -H "Content-Type: application/json" \
@@ -30,12 +29,13 @@ jobs:
       - name: Télécharger l'image générée
         run: |
           URL=$(jq -r '.imageUrl' response.json)
+          mkdir -p images
           curl -s -o "images/image-$(date +%s).png" "$URL"
 
-      - name: Sauvegarder la NOUVELLE image en artefact
+      - name: Sauvegarder l'image en artefact
         uses: actions/upload-artifact@v4
         with:
-          name: nouvelle-image
+          name: images-generees
           path: images/
 
   deploy:
@@ -44,27 +44,20 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Télécharger la nouvelle image générée
+      - name: Télécharger l'artefact
         uses: actions/download-artifact@v4
         with:
-          name: nouvelle-image
+          name: images-generees
           path: images/
 
       - name: Générer index.html
         run: |
-          echo "<html><head><meta charset='UTF-8'></head><body><h1>Images générées</h1>" > index.html
-          echo "<div style='display: flex; flex-wrap: wrap; gap: 20px;'>" >> index.html
-          
+          echo "<html><body><h1>Images générées</h1>" > index.html
           for img in images/*.png; do
-            if [ -f "$img" ]; then
-              filename=$(basename "$img")
-              echo "<div style='border: 1px solid #ccc; padding: 10px;'>" >> index.html
-              echo "  <img src='images/$filename' width='300'>" >> index.html
-              echo "  <p>$filename</p>" >> index.html
-              echo "</div>" >> index.html
-            fi
+            filename=$(basename "$img")
+            echo "<div><img src='images/$filename' width='300'><p>$filename</p></div>" >> index.html
           done
-          echo "</div></body></html>" >> index.html
+          echo "</body></html>" >> index.html
 
       - name: Déployer sur GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
