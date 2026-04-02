@@ -44,29 +44,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      # 1. On clone directement la branche gh-pages !
-      - name: Cloner la branche gh-pages
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: site-gh-pages
-        continue-on-error: true # Évite que ça plante si la branche n'existe pas encore au tout premier run
-
-      # 2. On s'assure que le dossier images existe sur gh-pages
-      - name: Préparer les dossiers
-        run: mkdir -p site-gh-pages/images
-
-      # 3. On télécharge la nouvelle image directement dans le dossier récupéré de gh-pages
       - name: Télécharger la nouvelle image générée
         uses: actions/download-artifact@v4
         with:
           name: nouvelle-image
-          path: site-gh-pages/images/
+          path: images/
 
-      # 4. On régénère le HTML avec TOUTES les images (anciennes + nouvelle)
       - name: Générer index.html
         run: |
-          cd site-gh-pages
           echo "<html><head><meta charset='UTF-8'></head><body><h1>Images générées</h1>" > index.html
           echo "<div style='display: flex; flex-wrap: wrap; gap: 20px;'>" >> index.html
           
@@ -81,10 +66,9 @@ jobs:
           done
           echo "</div></body></html>" >> index.html
 
-      # 5. On déploie le dossier complet mis à jour
       - name: Déployer sur GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site-gh-pages
-          keep_files: true # Indispensable pour garder l'historique !
+          publish_dir: .
+          keep_files: true
