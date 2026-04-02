@@ -44,6 +44,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Cloner gh-pages (images existantes)
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+        continue-on-error: true
+
+      - name: Préparer le dossier images
+        run: mkdir -p images
+      
       - name: Télécharger l'artefact
         uses: actions/download-artifact@v4
         with:
