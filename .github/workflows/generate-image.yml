@@ -6,9 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   generation-image:
     runs-on: ubuntu-latest
@@ -18,11 +15,12 @@ jobs:
 
       - name: Récupérer le message du commit
         run: |
-          MSG=$(git log -1 --pretty=%B | head -1)
+          MSG=$(git log -1 --pretty=%B | head -n 1)
           echo "MESSAGE=$MSG" >> $GITHUB_ENV
 
       - name: Appel API DynaPictures
         run: |
+          mkdir -p images
           curl -s -X POST "https://api.dynapictures.com/designs/87ce71f347" \
             -H "Authorization: Bearer ${{ secrets.DYNAPICTURES_API_KEY }}" \
             -H "Content-Type: application/json" \
@@ -32,36 +30,61 @@ jobs:
       - name: Télécharger l'image générée
         run: |
           URL=$(jq -r '.imageUrl' response.json)
-          mkdir -p images
           curl -s -o "images/image-$(date +%s).png" "$URL"
 
-      - name: Sauvegarder l'image en artefact
+      - name: Sauvegarder la NOUVELLE image en artefact
         uses: actions/upload-artifact@v4
         with:
-          name: images-generees
+          name: nouvelle-image
           path: images/
 
   deploy:
     runs-on: ubuntu-latest
     needs: generation-image
+    permissions:
+      contents: write
     steps:
-      - name: Télécharger l'artefact
+      # 1. On clone directement la branche gh-pages !
+      - name: Cloner la branche gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site-gh-pages
+        continue-on-error: true # Évite que ça plante si la branche n'existe pas encore au tout premier run
+
+      # 2. On s'assure que le dossier images existe sur gh-pages
+      - name: Préparer les dossiers
+        run: mkdir -p site-gh-pages/images
+
+      # 3. On télécharge la nouvelle image directement dans le dossier récupéré de gh-pages
+      - name: Télécharger la nouvelle image générée
         uses: actions/download-artifact@v4
         with:
-          name: images-generees
-          path: images/
+          name: nouvelle-image
+          path: site-gh-pages/images/
 
+      # 4. On régénère le HTML avec TOUTES les images (anciennes + nouvelle)
       - name: Générer index.html
         run: |
-          echo "<html><body><h1>Images générées</h1>" > index.html
+          cd site-gh-pages
+          echo "<html><head><meta charset='UTF-8'></head><body><h1>Images générées</h1>" > index.html
+          echo "<div style='display: flex; flex-wrap: wrap; gap: 20px;'>" >> index.html
+          
           for img in images/*.png; do
-            filename=$(basename "$img")
-            echo "<div><img src='images/$filename' width='300'><p>$filename</p></div>" >> index.html
+            if [ -f "$img" ]; then
+              filename=$(basename "$img")
+              echo "<div style='border: 1px solid #ccc; padding: 10px;'>" >> index.html
+              echo "  <img src='images/$filename' width='300'>" >> index.html
+              echo "  <p>$filename</p>" >> index.html
+              echo "</div>" >> index.html
+            fi
           done
-          echo "</body></html>" >> index.html
+          echo "</div></body></html>" >> index.html
 
+      # 5. On déploie le dossier complet mis à jour
       - name: Déployer sur GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
+          publish_dir: ./site-gh-pages
+          keep_files: true # Indispensable pour garder l'historique !
